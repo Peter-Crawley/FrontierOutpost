@@ -1,0 +1,9 @@
+[package]
+name = "frontier-outpost"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winit = "0.27.5"
+env_logger = "0.10.0"
+wgpu = "0.14.2"
