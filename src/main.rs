@@ -2,10 +2,13 @@ use std::error::Error;
 use std::iter;
 
 use wgpu::{
-	Adapter, Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device,
-	DeviceDescriptor, Features, Instance, Limits, LoadOp, Operations, PowerPreference, PresentMode,
-	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
-	SurfaceConfiguration, TextureUsages, TextureViewDescriptor,
+	Backends, BlendState, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
+	CompositeAlphaMode, Device, DeviceDescriptor, Face, Features, FragmentState, FrontFace,
+	include_wgsl, Instance, Limits, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor,
+	PolygonMode, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
+	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+	RequestAdapterOptions, Surface, SurfaceConfiguration, TextureUsages, TextureViewDescriptor,
+	VertexState,
 };
 use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
@@ -20,8 +23,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 	let window = WindowBuilder::new()
 		.with_title("Frontier Outpost")
 		.build(&event_loop)?;
-
-	let size = window.inner_size();
 
 	let instance = Instance::new(Backends::VULKAN);
 	let surface = unsafe { instance.create_surface(&window) };
@@ -38,7 +39,70 @@ async fn main() -> Result<(), Box<dyn Error>> {
 		label: None,
 	}, None).await?;
 
-	configure(&surface, &adapter, &device, size);
+	let mut config = SurfaceConfiguration {
+		usage: TextureUsages::RENDER_ATTACHMENT,
+		format: surface.get_supported_formats(&adapter)[0],
+		width: 0,
+		height: 0,
+		present_mode: PresentMode::AutoVsync,
+		alpha_mode: CompositeAlphaMode::Auto,
+	};
+
+	let configure = move |
+		config: &mut SurfaceConfiguration,
+	    new_size: PhysicalSize<u32>,
+	    surface: &Surface,
+	    device: &Device
+	| {
+		config.width = new_size.width;
+		config.height = new_size.height;
+		surface.configure(device, &config);
+	};
+
+	configure(&mut config, window.inner_size(), &surface, &device);
+
+	let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+
+	let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+		label: None,
+		bind_group_layouts: &[],
+		push_constant_ranges: &[],
+	});
+
+	let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+		label: None,
+		layout: Some(&render_pipeline_layout),
+		vertex: VertexState {
+			module: &shader,
+			entry_point: "vertex_main",
+			buffers: &[],
+		},
+		fragment: Some(FragmentState {
+			module: &shader,
+			entry_point: "fragment_main",
+			targets: &[Some(ColorTargetState {
+				format: config.format,
+				blend: Some(BlendState::REPLACE),
+				write_mask: ColorWrites::ALL,
+			})],
+		}),
+		primitive: PrimitiveState {
+			topology: PrimitiveTopology::TriangleList,
+			strip_index_format: None,
+			front_face: FrontFace::Ccw,
+			cull_mode: Some(Face::Back),
+			polygon_mode: PolygonMode::Fill,
+			unclipped_depth: false,
+			conservative: false,
+		},
+		depth_stencil: None,
+		multisample: MultisampleState {
+			count: 1,
+			mask: !0,
+			alpha_to_coverage_enabled: false,
+		},
+		multiview: None,
+	});
 
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::RedrawRequested(window_id) if window_id == window.id() => {
@@ -46,38 +110,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
 			let view = output.texture.create_view(&TextureViewDescriptor::default());
 			let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
 
-			encoder.begin_render_pass(&RenderPassDescriptor {
-				label: None,
-				color_attachments: &[Some(RenderPassColorAttachment {
-					view: &view,
-					resolve_target: None,
-					ops: Operations {
-						load: LoadOp::Clear(Color::BLACK),
-						store: true,
-					},
-				})],
-				depth_stencil_attachment: None,
-			});
+			{
+				let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+					label: None,
+					color_attachments: &[Some(RenderPassColorAttachment {
+						view: &view,
+						resolve_target: None,
+						ops: Operations {
+							load: LoadOp::Clear(Color::BLACK),
+							store: true,
+						},
+					})],
+					depth_stencil_attachment: None,
+				});
+
+				render_pass.set_pipeline(&render_pipeline);
+				render_pass.draw(0..3, 0..1);
+			}
 
 			queue.submit(iter::once(encoder.finish()));
 			output.present();
 		}
 		Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
-			WindowEvent::Resized(new_size) => configure(&surface, &adapter, &device, *new_size),
+			WindowEvent::Resized(new_size) => configure(&mut config, *new_size, &surface, &device),
 			WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
 			_ => {}
 		}
 		_ => {}
-	});
-}
-
-fn configure(surface: &Surface, adapter: &Adapter, device: &Device, new_size: PhysicalSize<u32>) {
-	surface.configure(device, &SurfaceConfiguration {
-		usage: TextureUsages::RENDER_ATTACHMENT,
-		format: surface.get_supported_formats(&adapter)[0],
-		width: new_size.width,
-		height: new_size.height,
-		present_mode: PresentMode::AutoVsync,
-		alpha_mode: CompositeAlphaMode::Auto,
 	});
 }
