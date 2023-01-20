@@ -147,10 +147,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
 		multiview: None,
 	});
 
+	let mut frame_time = Duration::ZERO;
+	let mut last_time = Instant::now();
+	let mut frames = 0;
+
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::MainEventsCleared => window.request_redraw(),
 		Event::RedrawRequested(window_id) if window_id == window.id() => {
 			let output = surface.get_current_texture().unwrap();
+
+			frames += 1;
+			if last_time.elapsed() >= Duration::from_secs(1) {
+				println!("{} FPS {:.2}ms Avg", frames, frame_time.as_millis() as f64 / frames as f64);
+				frame_time = Duration::ZERO;
+				last_time = Instant::now();
+				frames = 0;
+			}
+
+			let frame_start_time = Instant::now();
+
 			let view = output.texture.create_view(&TextureViewDescriptor::default());
 			let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
 
@@ -175,6 +190,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 			queue.submit(iter::once(encoder.finish()));
 			output.present();
+
+			frame_time += frame_start_time.elapsed();
 		}
 		Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
 			WindowEvent::Resized(new_size) => configure(&mut config, *new_size, &surface, &device),
