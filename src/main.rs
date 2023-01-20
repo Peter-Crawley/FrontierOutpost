@@ -1,19 +1,56 @@
 use std::error::Error;
 use std::iter;
+use std::mem::size_of;
 
+use bytemuck::{Pod, Zeroable};
 use wgpu::{
-	Backends, BlendState, Color, ColorTargetState, ColorWrites, CommandEncoderDescriptor,
-	CompositeAlphaMode, Device, DeviceDescriptor, Face, Features, FragmentState, FrontFace,
-	include_wgsl, Instance, Limits, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor,
-	PolygonMode, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
-	RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+	Backends, BlendState, BufferAddress, BufferUsages, Color, ColorTargetState, ColorWrites,
+	CommandEncoderDescriptor, CompositeAlphaMode, Device, DeviceDescriptor, Face, Features,
+	FragmentState, FrontFace, include_wgsl, Instance, Limits, LoadOp, MultisampleState, Operations,
+	PipelineLayoutDescriptor, PolygonMode, PowerPreference, PresentMode, PrimitiveState,
+	PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
 	RequestAdapterOptions, Surface, SurfaceConfiguration, TextureUsages, TextureViewDescriptor,
-	VertexState,
+	VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
 };
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct Vertex {
+	position: [f32; 2],
+	color: [f32; 3],
+}
+
+impl Vertex {
+	fn descriptor<'a>() -> VertexBufferLayout<'a> {
+		VertexBufferLayout {
+			array_stride: size_of::<Vertex>() as BufferAddress,
+			step_mode: VertexStepMode::Vertex,
+			attributes: &[
+				VertexAttribute {
+					offset: 0,
+					shader_location: 0,
+					format: VertexFormat::Float32x2,
+				},
+				VertexAttribute {
+					offset: size_of::<[f32; 2]>() as BufferAddress,
+					shader_location: 1,
+					format: VertexFormat::Float32x3,
+				}
+			],
+		}
+	}
+}
+
+const VERTICES: &[Vertex] = &[
+	Vertex { position: [0.0, 0.5], color: [1.0, 0.0, 0.0] },
+	Vertex { position: [-0.5, -0.5], color: [0.0, 1.0, 0.0] },
+	Vertex { position: [0.5, -0.5], color: [0.0, 0.0, 1.0] },
+];
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -38,6 +75,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 		limits: Limits::default(),
 		label: None,
 	}, None).await?;
+
+	let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+		label: None,
+		contents: bytemuck::cast_slice(VERTICES),
+		usage: BufferUsages::VERTEX,
+	});
 
 	let mut config = SurfaceConfiguration {
 		usage: TextureUsages::RENDER_ATTACHMENT,
@@ -75,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 		vertex: VertexState {
 			module: &shader,
 			entry_point: "vertex_main",
-			buffers: &[],
+			buffers: &[Vertex::descriptor()],
 		},
 		fragment: Some(FragmentState {
 			module: &shader,
@@ -125,7 +168,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 				});
 
 				render_pass.set_pipeline(&render_pipeline);
-				render_pass.draw(0..3, 0..1);
+				render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+				render_pass.draw(0..VERTICES.len() as u32, 0..1);
 			}
 
 			queue.submit(iter::once(encoder.finish()));
