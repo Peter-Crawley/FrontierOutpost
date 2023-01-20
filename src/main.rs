@@ -148,6 +148,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 	});
 
 	event_loop.run(move |event, _, control_flow| match event {
+		Event::MainEventsCleared => window.request_redraw(),
 		Event::RedrawRequested(window_id) if window_id == window.id() => {
 			let output = surface.get_current_texture().unwrap();
 			let view = output.texture.create_view(&TextureViewDescriptor::default());
