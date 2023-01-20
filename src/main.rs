@@ -2,11 +2,12 @@ use std::error::Error;
 use std::iter;
 
 use wgpu::{
-	Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Features,
-	Instance, Limits, LoadOp, Operations, PowerPreference, PresentMode, RenderPassColorAttachment,
-	RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, TextureUsages,
-	TextureViewDescriptor,
+	Adapter, Backends, Color, CommandEncoderDescriptor, CompositeAlphaMode, Device,
+	DeviceDescriptor, Features, Instance, Limits, LoadOp, Operations, PowerPreference, PresentMode,
+	RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, Surface,
+	SurfaceConfiguration, TextureUsages, TextureViewDescriptor,
 };
+use winit::dpi::PhysicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
@@ -37,16 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 		label: None,
 	}, None).await?;
 
-	let config = SurfaceConfiguration {
-		usage: TextureUsages::RENDER_ATTACHMENT,
-		format: surface.get_supported_formats(&adapter)[0],
-		width: size.width,
-		height: size.height,
-		present_mode: PresentMode::AutoVsync,
-		alpha_mode: CompositeAlphaMode::Auto,
-	};
-
-	surface.configure(&device, &config);
+	configure(&surface, &adapter, &device, size);
 
 	event_loop.run(move |event, _, control_flow| match event {
 		Event::RedrawRequested(window_id) if window_id == window.id() => {
@@ -71,9 +63,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 			output.present();
 		}
 		Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
+			WindowEvent::Resized(new_size) => configure(&surface, &adapter, &device, *new_size),
 			WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
 			_ => {}
 		}
 		_ => {}
+	});
+}
+
+fn configure(surface: &Surface, adapter: &Adapter, device: &Device, new_size: PhysicalSize<u32>) {
+	surface.configure(device, &SurfaceConfiguration {
+		usage: TextureUsages::RENDER_ATTACHMENT,
+		format: surface.get_supported_formats(&adapter)[0],
+		width: new_size.width,
+		height: new_size.height,
+		present_mode: PresentMode::AutoVsync,
+		alpha_mode: CompositeAlphaMode::Auto,
 	});
 }
